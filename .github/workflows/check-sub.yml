@@ -1,0 +1,61 @@
+
+name: Check Subscription Updates
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  check-sub:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get repository
+        uses: actions/checkout@v4
+
+      - name: Check subscription
+        env:
+          SUB_URL: https://raw.githubusercontent.com/kurdistan-country/v2rayNG/refs/heads/main/New%20Update.txt
+        run: |
+          set -eu
+
+          curl -fsSL --max-time 30 "$SUB_URL" -o /tmp/sub.txt
+
+          if [ ! -s /tmp/sub.txt ]; then
+            echo "ERROR: Subscription file is empty"
+            exit 1
+          fi
+
+          NEW_HASH=$(sha256sum /tmp/sub.txt | cut -d ' ' -f 1)
+          HASH_FILE=".github/subscription.sha256"
+
+          if [ -f "$HASH_FILE" ]; then
+            OLD_HASH=$(cat "$HASH_FILE")
+          else
+            OLD_HASH=""
+          fi
+
+          if [ "$NEW_HASH" = "$OLD_HASH" ]; then
+            echo "No changes detected."
+            exit 0
+          fi
+
+          mkdir -p .github
+          printf '%s\n' "$NEW_HASH" > "$HASH_FILE"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add "$HASH_FILE"
+          git commit -m "Update subscription checksum"
+          git push
+
+          if [ -z "$OLD_HASH" ]; then
+            echo "Initial checksum saved."
+          else
+            echo "Subscription changed."
+          fi
